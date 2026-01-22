@@ -64,7 +64,7 @@ This example uses the VTXO tree in example 1. The goal of this example is to cre
 
 1. Bob creates secret P.
 2. Bob sends H(P) to Alice.
-3. Alice creates HTLC based on H(P) and proposes a state updates the state.
+3. Alice creates HTLC based on H(P) and proposes a state updates to the state.
     1. Creates vtxo_spend_request, tagged as a HTLC_Offer.
     2. Steve signs vtxo_spend_complete.
 4. Bob releases P.
