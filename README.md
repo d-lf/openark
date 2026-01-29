@@ -43,7 +43,7 @@ In this example we let five users Alice, Bob, Carol, Dave and Eve create a VTXO 
 7. Steve issues a new_round_start.
    1. The root is deposited and the round starts. This is the official start of the round.  
 
-### Example 1.1 - Alice pays Bob
+### Example 1.1 – Alice pays Bob
 
 1. Bob creates secret P.
 2. Bob sends H(P) to Alice.
@@ -54,9 +54,69 @@ In this example we let five users Alice, Bob, Carol, Dave and Eve create a VTXO 
     1. Creates vtxo_spend_request, tagged as a HTLC_Success.
     2. Steve signs vtxo_spend_complete.
 
+### Example 1.3 – Round ends, Bob offboards 0.5 BTC, Dave is offline and misses the round, Eve onboards 0.4 BTC.
+
+1. The block named as the closing block at the start of the round is mined. 
+2. Steve issues a new_round_initiate message signaling a new round.
+3. Steve issues round_closed_message, he taggs the new_round_initiate message indicating the round to be transferred to.
+4. The users decide how to proceed with the new round, they each issue a new_round_join message.
+   1. Alice indicates that she wants to transfer all of her capital. 
+   2. Bob indicates that he wants to offboard 0.5 BTC. 
+   3. Carol indicates that she wants to transfer all of her capital. 
+   4. Dave is offline and does not send a message, hence missing the round. His capital is left in the closed round and will be recycled. 
+   5. Eve indicates that she wants to transfer all her current capital and also to onboard 0.4 BTC.
+5. Steve collects the responses, and after the timeout is reached issues a new_round_vtxo_tree_proposal. This contains: 
+   1. A new round transaction containing:
+      1. A new VTXO root output, locket with A+B+C+E+S | S + T=2000.
+      2. An offboarding output for Bob
+      3. A forfeit output root.
+      4. An funding input for Eve.
+      5. A funding input for Steve.
+   2. Forfeit control transaction.
+   3. Forfeit transactions for the capital that is being transferred.
+   4. A recycle transaction for the round containing:
+      1. An output with Daves capital based on his recycle address.
+      2. An output to Steve with the rest of the capital.
+6. The users, Alice, Bob, Carol and Eve verify that the tree matches the request, and then each issue a new_vtxo_tree_accept, it contains:
+   1. Signatures for the new VTXO tree.
+7. Steve verifies that everything is here and then issues a new_round_funding_request.
+8. The users, Alice, Bob, Carol and Eve verify that everything is ok, and then each issue a new_round_funding_accept, it contains:
+   1. Signatures for the forfeit transactions.
+   2. Signatures for the funding transactions (only Eve has one).
+   3. Signatures for the recycle transaction.
+9. Steve verifies that the funding has been received, commits the transaction and then issues a new_round_start.
+10. Dave comes online, understands that he missed the round issues a recycle_accept containing his signature for the recycle transaction.
+11. Steve submits the recycle transaction.
+
+### Funding a round
+
+There are two ways for users to fund a round, either by signing over capital from a closed round to the ark service provider using a forfeit transaction or by onboarding new capital.
+
+#### Forfeit transactions
+
+A forfeit transaction is a way for users to swap capital from a recently closed round into a new round in a trustless way,
+where depositing the new round root transaction is the atomic action triggering the swap. When Steve proposes a new round, 
+he will add a forfeit root output to the round root transaction. This root is connected to the forfeit trunk and from there 
+to forfeit leaves. When a forfeit transaction is created, a forfeit leaf is added as one of its inputs, along with the capital 
+being forfeited, assuring the user that the only way this forfeit transaction can be activated is if the round root is deposited. 
+If the root is not deposited, then the forfeit transaction will be invalid, and the user can still do a unilateral exit.
+
+#### Recycle transactions
+
+A recycle transaction is a collaborative way to recycle the capital in closed rounds that transfer capital to a new round. 
+When the new VTXO tree is created, an optional set of recycle transactions can be added to the new_round_vtxo_tree_proposal. 
+These transactions provide a collaborative way to recycle the capital in the closed rounds. The transactions are designed as follows:
+1. All usercapital that is not being transferred to the new round is sent to a recycle address provided by the respective user at round start.
+2. The rest is distributed to the ark service provider.
+
+In most rounds, where all the users are online at the end of the round, all the capital is moved to the new round, and hence the 
+only capital left will belong to the ark service provider.
+
 ## RGB
 
 Here are examples that add support for RGB.
+
+Block 100 is mined, this starts the end of the round. 
 
 ### Example 2.1 - Creating a VTXO Tree
 
