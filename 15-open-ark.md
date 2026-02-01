@@ -65,12 +65,12 @@ External LPs can participate in round closures through multisig integration:
 
 ### Security Properties
 
-| Property | Mechanism |
-|----------|-----------|
-| LP fund safety | LP key required in multisig; revocation pays to LP key |
-| ASP non-custodial proof | LP can cryptographically verify ASP cannot rug users |
-| Double-spend prevention | LP validates state before providing liquidity |
-| Atomicity | Swap is all-or-nothing via pre-signed contracts |
+| Property | Mechanism                                                     |
+|----------|---------------------------------------------------------------|
+| LP fund safety | LP key required in multisig; revocation pays to LP key        |
+| ASP non-custodial proof | LP can cryptographically verify ASP cannot double spend users |
+| Double-spend prevention | LP validates state before providing liquidity                 |
+| Atomicity | Swap is all-or-nothing via pre-signed contracts               |
 
 The LP effectively becomes a temporary participant in the round's key structure, not a lender with counterparty risk. This enables ASPs to scale without proportional capital requirements while maintaining trustless guarantees.
 
