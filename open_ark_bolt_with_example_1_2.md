@@ -485,15 +485,15 @@ sequenceDiagram
 
 1. Steve issues a `new_round_initiate`
     1. Informs everybody that a new round is starting.
-2. Alice, Bob, Carol, Dave and Eve reply with `new_round_join`
-    1. Here the Users declare what to onboard, what to offboard and what to transition.
+2. Alice, Bob, Carol, Dave, and Eve reply with `new_round_join`
+    1. Here the Users declare what to onboard, what to offboard, and what to transition.
 3. Steve issues a `new_round_vtxo_tree_proposal`
     1. Here Steve sends out the VTXO tree for signing.
-4. Alice, Bob, Carol, Dave and Eve issue a `new_round_vtxo_tree_accept`
+4. Alice, Bob, Carol, Dave, and Eve issue a `new_round_vtxo_tree_accept`
     1. Here the Users return the signed nodes.
 5. Steve issues a `new_round_prepare_start`
     1. Here Steve sends out the new root for signature, binding the tree to the root.
-6. Alice, Bob, Carol, Dave and Eve issue a `new_round_start_prepared`.
+6. Alice, Bob, Carol, Dave, and Eve issue a `new_round_start_prepared`.
     1. Here all Users accept the tree.
 7. Steve issues a `new_round_start`.
     1. The root is deposited and the round starts. This is the official start of the round.
@@ -543,6 +543,7 @@ This example illustrates round closure, offboarding, onboarding, and recycling b
 ```mermaid
 sequenceDiagram
     autonumber
+    participant Victoria as Victoria (XLP)
     participant Steve as Steve (ASP)
     participant Alice as Alice (User)
     participant Bob as Bob (User)
@@ -564,6 +565,9 @@ sequenceDiagram
     Steve->>Carol: new_round_initiate
     Steve->>Dave: new_round_initiate
     Steve->>Eve: new_round_initiate
+    
+    Steve->>Victoria: new_round_funding_request 
+    Victoria->>Steve: new_round_funding_accept (funding_outputs)
 
     Alice->>Steve: new_round_join (transfer all)
     Bob->>Steve: new_round_join (offboard 0.5 BTC)
@@ -572,6 +576,7 @@ sequenceDiagram
     Note right of Dave: Dave offline (no response)
 
     Note over Steve,Eve: Round 2 Initiated state - Confirm substate 
+    Note right of Dave:
     Steve->>Alice: new_round_vtxo_tree_proposal
     Steve->>Bob: new_round_vtxo_tree_proposal
     Steve->>Carol: new_round_vtxo_tree_proposal
@@ -608,13 +613,15 @@ sequenceDiagram
 1. The Bitcoin block designated as the **closing block** is mined.
 2. Steve broadcasts `round_closed`, marking the end of off-chain activity for the round.
 3. Steve initiates a new round with `new_round_initiate`.
-4. Participants respond with `new_round_join`:
+4. In paralell he asks Victoria to provide funding for the round using `new_round_funding_request`.
+5. Victoria responds with `new_round_funding_accept` containing the outputs that can be used to fund the round.
+6. Participants respond with `new_round_join`:
    1. Alice transfers all capital forward.
    2. Bob offboards **0.5 BTC**.
    3. Carol transfers all capital forward.
    4. Dave is offline and does not respond.
    5. Eve transfers all existing capital and onboards **0.4 BTC**.
-5. After the timeout, Steve issues `new_round_vtxo_tree_proposal`, including:
+7. After the timeout, Steve issues `new_round_vtxo_tree_proposal`, including:
    1. A new round transaction containing:
        1. A new VTXO root output, locked with A+B+C+E+S | S + T=400.
        2. An offboarding output for Bob
@@ -626,47 +633,14 @@ sequenceDiagram
    4. A recycle transaction for the round containing:
        1. An output with Dave's capital based on his recycle address.
        2. An output to Steve with the rest of the capital.
-6. Alice, Bob, Carol, and Eve verify the proposal and respond with `new_round_vtxo_tree_accept`.
-7. Steve requests final signatures via `new_round_prepare_start`.
-8. Alice, Bob, Carol, and Eve respond with `new_round_start_prepared`.
-9. Steve broadcasts the new round root and issues `new_round_start`.
-10. When Dave later comes online, he issues `recycle_accept`.
-11. Steve broadcasts the recycle transaction, allowing Dave to recover his funds.
-
-
-///////
-
-1. The block designated as the closing block at the start of the round is mined.
-2. Steve issues a **new_round_initiate** message signaling a new round.
-3. Steve issues **round_closed**. He tags the **new_round_initiate** message indicating the round to be transferred to.
-4. The Users decide how to proceed with the new round, and they each issue a **new_round_join** message.
-    1. Alice indicates that she wants to transfer all of her capital.
-    2. Bob indicates that he wants to offboard 0.5 BTC.
-    3. Carol indicates that she wants to transfer all of her capital.
-    4. Dave is offline and does not send a message, hence missing the round. His capital is left in the closed round and will be recycled.
-    5. Eve indicates that she wants to transfer all her current capital and also to onboard 0.4 BTC.
-5. Steve collects the responses and, after the timeout is reached, issues a **new_round_vtxo_tree_proposal**. This includes:
-    1. A new round transaction containing:
-        1. A new VTXO root output, locked with A+B+C+E+S | S + T=400.
-        2. An offboarding output for Bob
-        3. A forfeit root output.
-        4. A funding input for Eve.
-        5. A funding input for Steve.
-    2. Forfeit control transaction.
-    3. Forfeit transactions for the capital that is being transferred.
-    4. A recycle transaction for the round containing:
-        1. An output with Dave's capital based on his recycle address.
-        2. An output to Steve with the rest of the capital.
-6. The Users, Alice, Bob, Carol and Eve verify that the tree matches the request, and then each issues a **new_round_vtxo_tree_accept**. It contains:
-    1. Signatures for the new VTXO tree.
-7. Steve verifies that everything is there and then issues a **new_round_funding_request**.
-8. The Users, Alice, Bob, Carol and Eve verify that everything is OK, and then each issues a **new_round_funding_accept**. It contains:
-    1. Signatures for the forfeit transactions.
-    2. Signatures for the funding transactions (only Eve has one).
-    3. Signatures for the recycle transaction.
-9. Steve verifies that the funding has been received, commits the transaction, and then issues a **new_round_start**.
-10. Dave comes online, understands that he missed the round, and issues a **recycle_accept** containing his signature for the recycle transaction.
-11. Steve submits the recycle transaction.
+8. Alice, Bob, Carol, and Eve verify the proposal and respond with `new_round_vtxo_tree_accept`.
+9. Steve requests final signatures via `new_round_prepare_start`.
+10. Alice, Bob, Carol, and Eve respond with `new_round_start_prepared`.
+    - it contains signatures for the forfeit, funding, and cooperative recycle transactions. 
+11. Steve broadcasts the new round root and issues `new_round_start`.
+12. When Dave later comes online, he issues `recycle_accept`.
+    - it contains signatures for the cooperative recycle transaction.
+13. Steve broadcasts the cooperative recycle transaction, allowing Dave to recover his funds.
 
 ![ARK Example](OpenARK-example.svg)
 
