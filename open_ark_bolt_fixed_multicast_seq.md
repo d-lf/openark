@@ -329,6 +329,23 @@ In this example, the users join a new ARK round run by the ASP (**Steve**). An o
 ```mermaid
 sequenceDiagram
     autonumber
+    participant Steve as Steve (ASP)
+    participant Alice
+    participant Bob
+    participant Carol
+
+    Note over Steve,Carol: Multicast is logical; delivery is fan-out
+
+    par Multicast:new_round_initiate
+        Steve->>Alice: new_round_initiate
+        Steve->>Bob: new_round_initiate
+        Steve->>Carol: new_round_initiate
+    end
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
     participant Steve as "Steve (ASP)"
     participant Victoria as "Victoria (XLP)"
     participant Alice as "Alice"
