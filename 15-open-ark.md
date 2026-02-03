@@ -131,7 +131,7 @@ In this example we let five Users Alice, Bob, Carol, Dave and Eve create a VTXO 
       2. An output to Steve with the rest of the capital.
 6. The Users, Alice, Bob, Carol and Eve verify that the tree matches the request, and then each issues a **new_round_vtxo_tree_accept**. It contains:
    1. Signatures for the new VTXO tree.
-7. Steve verifies that everything is there and then issues a new_round_funding_request.
+7. Steve verifies that everything is there and then issues a **new_round_funding_request**.
 8. The Users, Alice, Bob, Carol and Eve verify that everything is OK, and then each issues a **new_round_funding_accept**. It contains:
    1. Signatures for the forfeit transactions.
    2. Signatures for the funding transactions (only Eve has one).
