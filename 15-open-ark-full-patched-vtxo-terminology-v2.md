@@ -71,13 +71,15 @@ ARK extends Lightning by allowing multiple participants to share a **single on-c
   Optional third party holding one of the ASP threshold signing keys.
 
 - **VTXO (Virtual Transaction Output)**:  
-  A **finite, ordered series of off-chain transactions** that begins at a **vtxo-leaf**, traverses one or more
+  A **finite, ordered series of off-chain transactions** that begins at a **vtxo-leaf**, traverses zero or more
   **vtxo-branches**, reaches a **vtxo-trunk** as the first off-chain transaction, and is **anchored on-chain**
-  by a **vtxo-root transaction**.
+  by a **vtxo-root output**.
 
 - **vtxo-leaf**:  
   The **final off-chain transaction** in a VTXO series, representing the current spendable state and the
   transaction that a user MAY unilaterally commit on-chain.
+
+RM: The leif is not a transaction, its the output. 
 
 - **vtxo-branch**:  
   An **intermediate off-chain transaction** in a VTXO series that links a vtxo-leaf to the vtxo-trunk and
@@ -95,9 +97,13 @@ ARK extends Lightning by allowing multiple participants to share a **single on-c
   An off-chain presigned transaction that **atomically binds** a VTXO series from a closed round to a
   successor vtxo-root in a new round, enforcing loss of control if round rules are violated.
 
+RM: explaint the different parts of the forfeit tree 
+
 - **Recycle Transaction**:  
   An on-chain Bitcoin transaction that recovers value for inactive or offline users after the recycle
   block height has been reached.
+
+RM: Make sure to explain that there are two types of recycle transactions:
 
 - **Round**:  
   A bounded time window in which VTXO transitions occur.
@@ -113,11 +119,12 @@ The system consists of:
 - Bitcoin L1 for final settlement
 - Lightning-compatible HTLC semantics
 - A Nostr relay network for coordination
-- An ASP providing availability but not custody
+- An ASP providing synchronization but not custody
 
 Trust assumptions:
-- ASP MAY censor but cannot steal funds
-- Users MUST be able to exit unilaterally
+- ASP MAY censor but MUST NOT unilaterally access NOR freeze user funds.
+- ASP MUST NOT be a custodian.
+- Users MUST be able to exit unilaterally at any time.
 
 ---
 
@@ -134,7 +141,7 @@ Trust assumptions:
 
 A VTXO is a finite, ordered series of off-chain transactions representing a claim to value under defined spending conditions. A user MAY unilaterally exit by broadcasting the vtxo-leaf together with the required ancestor transactions up to the on-chain vtxo-root transaction. A VTXO series consists of:
 
-- Terminated by the final off-chain transaction in the series, called the **vtxo-leaf**.
+- Terminated by the final off-chain output, called the **vtxo-leaf**.
 - Bound via a set of presigned off-chain transactions, called **vtxo-branches**, linking the vtxo-leaf to the **vtxo-trunk**, and ultimately anchored in an on-chain **vtxo-root transaction**.
 - Redeemable on-chain by broadcasting the series as specified above (unilateral exit).
 
@@ -163,9 +170,13 @@ The lifecycle consists of the following states:
 - **Recycled**  
   The round is terminated. Remaining value is recovered via the recycle transaction, allowing inactive or offline participants to reclaim funds.
 
+RM: Make a diagram here describing the round lifecycle.
+
 #### 7.1.1 Initiated state
 
 This state has in turn three sub-states: invite, confirm, and fund.
+
+RM: Make diagram here describing the states.
 
 ##### Invite state
 The goal of this substate is to invite users to join the round.
@@ -226,7 +237,7 @@ Unless this round is the final round for the ASP and the service is terminating,
 This state is entered when the recycling transaction has been broadcast by the ASP.
 
 Users that have not yet signed the recycle transaction can do this by broadcasting the `recycle_accept` message. Once all users have signed the recycle transaction, the ASP will broadcast the `recycle_broadcast` message, initiating the state.
-This can either happen when all users, as well as the ASP have signed and broadcast the recycle transaction (collaborative recycling) or when the recycling block has been found unilaterally (unilateral recycling).
+This can either happen when all users, as well as the ASP have signed and broadcast the recycle transaction (collaborative recycling) or when the recycling block has been found enabling the ASP broadcast transaction that has been signed unilaterally (unilateral recycling).
 
 ### 7.2 Block Height Bounds
 
@@ -236,11 +247,13 @@ Two block-height parameters define round progression:
   The Bitcoin block height at which the round MUST transition from *Started* to *Closed*. After this point, no new off-chain transitions are allowed.
 
 - **Recycle Block**  
-  The Bitcoin block height at which the ASP MAY unilaterally sign and broadcast the recycle transaction, transitioning the round to *Recycled*.
+  The Bitcoin block height at which the ASP MAY unilaterally broadcast the recycle transaction that is signed unilaterally, transitioning the round to *Recycled*.
 
 These bounds guarantee liveness while preserving unilateral exit guarantees for all users.
 
 ### 7.3 HTLC Transitions
+
+RM: Make a diagram here describing the HTLC Transitions.
 
 Like Lightning, OpenARK supports HTLC transactions to make OpenARK compatible with existing Lightning Network. Unlike Lightning, the procedure is much simpler to implement.
 In OpenARK we only need a few simple transactions to create a HTLC state machine. These are based around the following pattern,
@@ -272,7 +285,7 @@ HTLCs MAY be resolved:
 - Off-chain via ASP cosignature
 - On-chain via unilateral exit
 
-#### HTLC States
+### HTLC States
 
 ```mermaid
 stateDiagram-v2
@@ -284,7 +297,7 @@ stateDiagram-v2
 ```
 
 
-##### HTLC_Offer
+#### HTLC_Offer
 
 This state locks the vtxo-leaf of a VTXO series with a lock base around `B + H(P) + ( dT1 | S ) | A + ( T | B ) + ( dt2 | S )` where:
 
@@ -298,7 +311,7 @@ This state locks the vtxo-leaf of a VTXO series with a lock base around `B + H(P
 
 It is signed by A, S.
 
-##### HTLC_Success
+#### HTLC_Success
 
 This state transfers a HTLC vtxo into a simple `B+S | B + dT` where:
 
@@ -308,7 +321,7 @@ This state transfers a HTLC vtxo into a simple `B+S | B + dT` where:
 It is signed by B, P, S.
 Here S verifies that B has signed the transaction and that the preimage matches H(P).
 
-##### HTLC_Timeout
+#### HTLC_Timeout
 
 This state transfers a HTLC vtxo into a simple `A+S | A + dT` where:
 
@@ -333,6 +346,8 @@ This document defers detailed encoding to a companion **NIP-150** specification.
 
 ## Two-tier security – Cloud Agents
 
+TODO: Look into this section
+
 OpenARK requires the user to run some form of always-on agent to represent him in the ARK. This does not diverge from traditional 
 lightning setups, where the user in practice is required to run an always-on guard tower, that prevents the counterparty from 
 broadcasting an old state. Now in ARK the responsibility is extended beyond just guarding for fraudulent unilateral exits to also
@@ -351,6 +366,8 @@ In this case it might make sense to limit the agents' access to only include the
 
 ## 10. Funding, Forfeit, and Recycle Transactions
 
+TODO: Make sense of this section, should we have a section that describes the different transactions
+
 ### Funding
 Users MAY fund rounds by:
 - Transferring value from a previous round
@@ -366,6 +383,8 @@ Recycle transactions recover value to offline or inactive participants, enabling
 
 ## 11. On-chain Enforcement and Unilateral Exit
 
+TODO: Make sense of this section
+
 At any time, a user MAY:
 - Broadcast a unilateral exit transaction
 - Claim their VTXO value on-chain by converting the VTXO to a UTXO.
@@ -374,7 +393,9 @@ All VTXOs MUST map to a valid on-chain spending path.
 
 ---
 
-### External Liquidity Providers
+## External Liquidity Providers
+
+TODO: Add number
 
 In the case where the ASP does not have enough funds to cover the cost of the round, one or several external liquidity 
 providers (XLPs) MAY be used to raise the required capital. In this case the XLP SHOULD join the ASP as a co-verifier. 
@@ -403,6 +424,8 @@ Examples in Section 2 illustrate cross-asset HTLC swaps.
 
 ## 13. Privacy Considerations
 
+TODO: This section says nothing
+
 - VTXO ownership is off-chain
 - ASP learns graph structure but not intent
 - Nostr metadata leakage MUST be considered
@@ -410,6 +433,8 @@ Examples in Section 2 illustrate cross-asset HTLC swaps.
 ---
 
 ## 14. Security Considerations
+
+TODO: Expand to give meaningful security analysis
 
 Threats:
 - ASP censorship
@@ -433,6 +458,8 @@ Mitigations:
 
 ## 16. Compatibility with Lightning (BOLT 2–11)
 
+TODO: Expand to give meaningful compatibility analysis
+
 ARK:
 - Preserves HTLC behavior
 - Does not alter gossip or routing
@@ -443,6 +470,8 @@ Existing Lightning nodes are not required to understand ARK internals.
 ---
 
 ## 17. Deployment Considerations
+
+TODO: This section is meaningless now 
 
 - ASPs SHOULD publish reliability metrics
 - Users SHOULD limit exposure per round
@@ -458,6 +487,8 @@ This design draws inspiration from Lightning, channel factories, and the ARK res
 ## 19. Examples
 
 ### Roles
+
+TODO: Add the short lettes here (A,B,C,D,E,S,V)
 
 - **Users**: Alice, Bob, Carol, Dave, Eve.
 - **Ark Service Provider (ASP)**: Steve.
