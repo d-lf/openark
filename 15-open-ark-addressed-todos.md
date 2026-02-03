@@ -74,14 +74,17 @@ ARK extends Lightning by allowing multiple participants to share a **single on-c
   2. One or more **forfeit leaf transactions** mapping individual VTXO series to their successor state.
 
 - **Recycle Transaction**:  
-  An on-chain Bitcoin transaction used to recover value for inactive or offline users after the recycle block
-  height has been reached. Two forms exist:
+  An on-chain Bitcoin transaction used to recover value for inactive or offline users as well as liquidity providers. 
+- Two forms exist:
   - **Cooperative recycle transaction**
   - **Unilateral recycle transaction**
+
+  TODO: Add closing and recycling block here
 
 - **Round**:  
   A bounded time window in which VTXO transitions occur.
 
+TODO: add to VTXO above
 A VTXO **MUST** be interpreted strictly as an ordered path  
 **vtxo-leaf → vtxo-branch(es) → vtxo-trunk → vtxo-root**  
 and **MUST NOT** be interpreted as a single output, balance, or UTXO-like object.
@@ -116,7 +119,7 @@ Trust assumptions:
 
 A VTXO is a finite, ordered series of off-chain transactions representing a claim to value under defined spending conditions.
 
-A user MAY unilaterally exit by broadcasting the vtxo-leaf output together with the required ancestor transactions up to and including the on-chain vtxo-root transaction.
+A user MAY unilaterally exit by broadcasting the vtxo-leaf output together with the required ancestor transactions up to and including the on-chain vtxo-trunk transaction.
 
 A VTXO series consists of:
 - A terminal vtxo-leaf output.
