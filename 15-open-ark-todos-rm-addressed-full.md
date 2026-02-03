@@ -169,12 +169,9 @@ The lifecycle consists of the following states:
 ```mermaid
 stateDiagram-v2
     [*] --> Initiated
-    Initiated --> Started: vtxo-root confirmed
-new_round_start
-    Started --> Closed: closing block reached
-round_closed
+    Initiated --> Started: vtxo-root broadcast, new_round_start
+    Started --> Closed: closing block reached, round_closed
     Closed --> Recycled: recycle tx broadcast
-(recycle_broadcast)
     Recycled --> [*]
 ```
 
