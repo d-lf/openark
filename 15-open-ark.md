@@ -61,14 +61,54 @@ ARK extends Lightning by allowing multiple participants to share a **single on-c
 
 ## 3. Terminology
 
-- **ASP (Ark Service Provider)**: Entity coordinating rounds and cosigning transitions
-- **User**: Participant owning a VTXO leaf
-- **Co-Verifier**: Optional third party holding one of the ASP threshold keys
-- **VTXO**: Virtual Transaction Output, representing off-chain ownership
-- **Round**: A bounded time window in which VTXO transitions occur
-- **Root Transaction**: On-chain transaction anchoring a round
+- **ASP (Ark Service Provider)**:  
+  Entity coordinating rounds and cosigning transitions.
 
----
+- **User**:  
+  Participant owning one or more VTXO series.
+
+- **Co-Verifier**:  
+  Optional third party holding one of the ASP threshold signing keys.
+
+- **VTXO (Virtual Transaction Output)**:  
+  A **finite, ordered series of off-chain transactions** that begins at a **vtxo-leaf**, traverses one or more
+  **vtxo-branches**, reaches a **vtxo-trunk** as the first off-chain transaction, and is **anchored on-chain**
+  by a **vtxo-root transaction**.
+
+- **vtxo-leaf**:  
+  The **final off-chain output** in a VTXO series. The vtxo-leaf represents the current spendable state and is the
+  output that a user MAY unilaterally commit on-chain by broadcasting the required ancestor transaction path.
+- **vtxo-branch**:  
+  An **intermediate off-chain transaction** in a VTXO series that links a vtxo-leaf to the vtxo-trunk and
+  encodes a valid state transition.
+
+- **vtxo-trunk**:  
+  The **first off-chain transaction** in a VTXO series, aggregating one or more vtxo-branches and serving as
+  the off-chain predecessor to the vtxo-root transaction.
+
+- **vtxo-root transaction**:  
+  An **on-chain Bitcoin transaction** that anchors one or more vtxo-trunks and establishes on-chain
+  enforceability of all descendant VTXO series.
+
+- **Forfeit Transaction**:  
+  A presigned off-chain transaction forming part of the **forfeit tree**. Forfeit transactions **atomically bind** a
+  closed-round VTXO series to its successor state in a new round (or to the recycle path), ensuring that protocol rule
+  violations result in loss of control **without granting the ASP unilateral spend authority**. The forfeit tree consists of:
+  1. A **forfeit control transaction** that commits to the set of forfeitures for the round and defines when forfeiture becomes valid.
+  2. One or more **forfeit leaf transactions**, each mapping a specific VTXO series (or cohort) to its successor commitment in the next round.
+
+- **Recycle Transaction**:  
+  An on-chain Bitcoin transaction that recovers value for inactive or offline users after the **recycle block height** has been reached.
+  Two forms exist:
+  - **Cooperative recycle transaction**: constructed for the round and intended to be signed by all participants; if fully signed, it MAY be broadcast before the recycle block.
+  - **Unilateral recycle transaction**: presigned sufficiently for the ASP to broadcast after the recycle block; it MUST preserve each participant’s ability to reclaim their allocated output.
+- **Round**:  
+  A bounded time window in which VTXO transitions occur.
+
+A VTXO **MUST** be interpreted strictly as an ordered path  
+**vtxo-leaf → vtxo-branch(es) → vtxo-trunk → vtxo-root**  
+and **MUST NOT** be interpreted as a single output, balance, or UTXO-like object.
+
 
 ## 4. System Model
 
@@ -95,15 +135,16 @@ Trust assumptions:
 
 ## 6. VTXO Model
 
-A VTXO is a logical output representing claim to value under a spending condition, that can be unilaterally committed on-chain by transmitting a series of presigned transactions that are:
+A VTXO is a finite, ordered series of off-chain transactions representing a claim to value under defined spending conditions. A user MAY unilaterally exit by broadcasting the vtxo-leaf together with the required ancestor transactions up to the on-chain vtxo-root transaction. A VTXO series consists of:
 
-- Terminated by an output that is the last step in the spending path and is called the vtxo-leaf.
-- Bound via a set of presigned transactions, called vtxo-branches that are kept off-chain to an on-chain transaction called the vtxo-root.
-- Redeemable on-chain by broadcasting the transactions, this is called unilateral exit.
+- Terminated by the final off-chain output in the series, called the **vtxo-leaf**.
+- Bound via a set of presigned off-chain transactions, called **vtxo-branches**, linking the vtxo-leaf to the **vtxo-trunk**, and ultimately anchored in an on-chain **vtxo-root transaction**.
+- Redeemable on-chain by broadcasting the series as specified above (unilateral exit).
 
-Together all the VTXOs form a directed acyclic graph (the vtxo-tree).
+Together, all VTXO series form a directed acyclic graph (the **vtxo-tree**).
 
 ---
+
 
 ## 7. Round Lifecycle
 
@@ -125,9 +166,26 @@ The lifecycle consists of the following states:
 - **Recycled**  
   The round is terminated. Remaining value is recovered via the recycle transaction, allowing inactive or offline participants to reclaim funds.
 
+```mermaid
+stateDiagram-v2
+    [*] --> Initiated
+    Initiated --> Started: vtxo-root broadcast, new_round_start
+    Started --> Closed: closing block reached, round_closed
+    Closed --> Recycled: recycle tx broadcast
+    Recycled --> [*]
+```
+
 #### 7.1.1 Initiated state
 
 This state has in turn three sub-states: invite, confirm, and fund.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Invite
+    Invite --> Confirm: min_timeout reached and all users responded or max_timeout reached
+    Confirm --> Fund: vtxo-tree signed
+    Fund --> [*]: vtxo-root broadcast
+```
 
 ##### Invite state
 The goal of this substate is to invite users to join the round.
@@ -170,7 +228,7 @@ When all of these are signed, the ASP will sign the vtxo-root and broadcast it, 
 
 ##### Aborting the initialization
 
-A user can at any time and for any reason abort the onboarding and instead chose to have his capital recycled by issuing
+A user can at any time and for any reason abort the onboarding and instead choose to have his capital recycled by issuing
 a `new_round_abort` message. In this case, the initialization is aborted for that user, and their funds MUST be handled via the recycle path (or carried forward into the next round, if applicable).
 
 #### 7.1.2 Started state
@@ -207,6 +265,21 @@ These bounds guarantee liveness while preserving unilateral exit guarantees for 
 Like Lightning, OpenARK supports HTLC transactions to make OpenARK compatible with existing Lightning Network. Unlike Lightning, the procedure is much simpler to implement.
 In OpenARK we only need a few simple transactions to create a HTLC state machine. These are based around the following pattern,
 
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Initiator as Initiator (User)
+    participant Cosigners as Cosigners (Tagged Users)
+    participant ASP as ASP
+
+    Initiator->>ASP: vtxo_spend_request (template, params, tags, sig)
+    loop for each tagged user
+        Cosigners->>ASP: vtxo_spend_accept (sig)
+    end
+    ASP->>Initiator: vtxo_spend_complete (fully cosigned tx)
+```
+
 1. A user initiates a `vtxo_spend_request` message, including:
    1. tagging the template in use.
    2. parameters required by the model.
@@ -219,12 +292,12 @@ In OpenARK we only need a few simple transactions to create a HTLC state machine
 
 A `vtxo_spend_request` can be aborted in four ways:
 
-1. If a tagged user does not like the request, he can issue a `vtxo_spend_reject` message, optionally providing a reason for the rejection. 
-2. The user that initated the request can issue a `vtxo_spend_abort_request`.
+1. If a tagged user rejects the request, he can issue a `vtxo_spend_reject` message, optionally providing a reason for the rejection. 
+2. The user that initiated the request can issue a `vtxo_spend_abort_request`.
 3. The closing block is reached.
-4. the ASP does not like the request for any reason.
+4. the ASP rejects the request for any reason.
 
-In either case the ASP will issue a `vtxo_spend_failed` message, making the vtxo free again.
+In either case the ASP MUST issue a `vtxo_spend_failed` message, making the vtxo free again.
 
 ## 8. HTLC Semantics in ARK
 
@@ -248,7 +321,7 @@ stateDiagram-v2
 
 ##### HTLC_Offer
 
-This state locks one of the vtxos with a lock base around `B + H(P) + ( dT1 | S ) | A + ( T | B ) + ( dt2 | S )` where:
+This state locks the vtxo-leaf of a VTXO series with a lock base around `B + H(P) + ( dT1 | S ) | A + ( T | B ) + ( dt2 | S )` where:
 
 1. A is the sending key.
 2. B is the receiving key.
@@ -278,7 +351,7 @@ This state transfers a HTLC vtxo into a simple `A+S | A + dT` where:
 2. dT is the ark-timelock.
 
 It is signed by A, S, and optionally B.
-Here S verifies that eith B has signed the transaction, or T has passed.
+Here S verifies that either B has signed the transaction, or T has passed.
 
 ## 9. Message Transport (Nostr)
 
@@ -295,7 +368,7 @@ This document defers detailed encoding to a companion **NIP-150** specification.
 
 ## Two-tier security – Cloud Agents
 
-OpenARK requires the user to run some form of always-on agent to represent him in the ARK. This does not diverge from traditional 
+OpenARK MAY be used with an always-on agent to represent a user in the ARK. This does not diverge from traditional 
 lightning setups, where the user in practice is required to run an always-on guard tower, that prevents the counterparty from 
 broadcasting an old state. Now in ARK the responsibility is extended beyond just guarding for fraudulent unilateral exits to also
 include managing the round transition. The protocol is therefore designed with this in mind. When we describe the transactions above 
@@ -369,6 +442,11 @@ Examples in Section 2 illustrate cross-asset HTLC swaps.
 - ASP learns graph structure but not intent
 - Nostr metadata leakage MUST be considered
 
+
+Additional considerations:
+- Nostr relay selection and event timing MAY leak sender/receiver correlation.
+- Implementations SHOULD randomize relay sets and consider padding/delays where feasible.
+- Public rounds (if any) SHOULD minimize announcement metadata beyond what is required for coordination.
 ---
 
 ## 14. Security Considerations
@@ -383,6 +461,11 @@ Mitigations:
 - Time-bounded rounds
 - Threshold signing
 
+
+Additional threats and mitigations:
+- **Equivocation by ASP**: mitigated by requiring participant verification of the vtxo-tree, forfeit tree, and recycle transactions before signing.
+- **Key compromise (user/agent)**: mitigated by key separation (A' vs A'') and per-round rekeying; implementations SHOULD support rapid revocation and rekey.
+- **Relay eclipse / partition**: mitigated by multi-relay publication and out-of-band peer connectivity where available.
 ---
 
 ## 15. Failure Modes and Recovery
@@ -402,6 +485,11 @@ ARK:
 
 Existing Lightning nodes are not required to understand ARK internals.
 
+Compatibility notes:
+- ARK HTLC templates MUST implement the same hashlock/timelock safety properties as BOLT HTLCs.
+- The protocol is compatible with existing invoices and payment flows when the sender/receiver endpoints can construct ARK HTLC templates.
+- ARK does not require changes to Bitcoin consensus rules or to the BOLT transport framing; it layers above existing Lightning semantics.
+
 ---
 
 ## 17. Deployment Considerations
@@ -409,6 +497,11 @@ Existing Lightning nodes are not required to understand ARK internals.
 - ASPs SHOULD publish reliability metrics
 - Users SHOULD limit exposure per round
 - Multiple ASPs MAY coexist interconnected via lightning.
+
+Additional operational guidance:
+- ASP operators SHOULD publish round parameters (min/max timeouts, closing/recycle blocks) in a discoverable way.
+- Users SHOULD enforce per-round exposure limits and SHOULD prefer diversified ASPs for large balances.
+- Implementations SHOULD surface clear UX around transition risk at the closing block and at the recycle block.
 
 ---
 
@@ -420,6 +513,8 @@ This design draws inspiration from Lightning, channel factories, and the ARK res
 ## 19. Examples
 
 ### Roles
+
+- **Short roles**: A=Alice, B=Bob, C=Carol, D=Dave, E=Eve, S=Steve (ASP), V=Victoria (XLP)
 
 - **Users**: Alice, Bob, Carol, Dave, Eve.
 - **Ark Service Provider (ASP)**: Steve.
@@ -616,7 +711,7 @@ sequenceDiagram
 1. The Bitcoin block designated as the **closing block** is mined.
 2. Steve broadcasts `round_closed`, marking the end of off-chain activity for the round.
 3. Steve initiates a new round with `new_round_initiate`.
-4. In paralell he asks Victoria to provide funding for the round using `new_round_funding_request`.
+4. In parallel he asks Victoria to provide funding for the round using `new_round_funding_request`.
 5. Victoria responds with `new_round_funding_accept` containing the outputs that can be used to fund the round.
 6. Participants respond with `new_round_join`:
    1. Alice transfers all capital forward.
