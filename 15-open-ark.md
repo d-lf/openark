@@ -741,8 +741,11 @@ sequenceDiagram
        1. An output with Dave's capital based on his recycle address.
        2. An output to Steve with the rest of the capital.
 8. Alice, Bob, Carol, and Eve verify the proposal and respond with `new_round_vtxo_tree_accept`.
+    - it contains the signatures for the respective nodes in the vtxo-tree.
+    - every user is now assured that the expected funds are in this vtxo-tree.
 9. Steve requests final signatures via `new_round_prepare_start`.
 10. Alice, Bob, Carol, and Eve respond with `new_round_start_prepared`.
+    - every user verifies that he has received the signatures for the vtxo-tree.
     - it contains signatures for the forfeit, funding, and cooperative recycle transactions. 
 11. Steve broadcasts the new round root and issues `new_round_start`.
 12. When Dave later comes online, he issues `recycle_accept`.
@@ -813,3 +816,129 @@ Prerequisites:
 17. Xavier answers with `revoke_and_ack`
 18. Xavier sends  `commitment_signed` 
 19. Victoria answers with `revoke_and_ack`
+
+### Example 1.4 -- The Refresh: How VTXO-Trees Transition Between Rounds
+
+The most critical operation in OpenARK is the **refresh** -- the process by which value moves from one round's VTXO-tree to the next. This section walks through the mechanics in detail, showing how two VTXO-trees interact during a round transition, how offline users are handled, and how onboarding and offboarding integrate into the flow.
+
+#### Overview
+
+When a round's closing block is mined, the current VTXO-tree is frozen and a new round begins. Participants transfer their capital forward into a new VTXO-tree, while three auxiliary transaction structures ensure atomicity and safety:
+
+- **Forfeit transactions** bind old-round VTXOs to the new round's vtxo-root, ensuring users cannot double-spend across rounds.
+- **Recycle transactions** recover value for offline users who missed the transition.
+- **Onboarding/offboarding outputs** allow new capital to enter or leave the system during the transition.
+
+#### State Diagram: VTXO-Tree Interaction During Refresh
+
+The following diagram shows the lifecycle of two consecutive rounds and how their VTXO-trees interact through the forfeit and recycle mechanisms.
+
+```mermaid
+stateDiagram-v2
+    state "Round N (VTXO-Tree A)" as RoundN {
+        [*] --> A_Started: vtxo-root broadcast
+        A_Started --> A_Closed: closing block reached
+        A_Closed --> A_Recycled: recycle tx broadcast
+    }
+
+    state "Round N+1 (VTXO-Tree B)" as RoundN1 {
+        [*] --> B_Invite: new_round_initiate
+        B_Invite --> B_Confirm: users respond / timeout
+        B_Confirm --> B_Fund: vtxo-tree signed
+        B_Fund --> B_Started: vtxo-root broadcast
+        B_Started --> B_Closed: closing block reached
+    }
+
+    state "Forfeit Tree" as Forfeit {
+        [*] --> ForfeitControl: forfeit control tx
+        ForfeitControl --> ForfeitLeaves: forfeit leaf txs
+    }
+
+    state "Recycle Path" as Recycle {
+        [*] --> CooperativeRecycle: all participants sign
+        [*] --> UnilateralRecycle: recycle block reached
+    }
+
+    A_Closed --> B_Invite: triggers new round
+    A_Closed --> Forfeit: binds old VTXOs
+    Forfeit --> B_Fund: atomically linked to new vtxo-root
+    A_Closed --> Recycle: handles offline users
+    Recycle --> A_Recycled: funds recovered
+```
+
+#### Walkthrough: Round 1 to Round 2
+
+This walkthrough expands on Example 1.2, detailing how two VTXO-trees interact during the transition from Round 1 to Round 2, with the same participants: Alice, Bob, Carol, Dave, Eve, Steve (ASP), and Victoria (XLP).
+
+**Starting state**: Round 1 is in the *Started* state. All five users hold VTXOs in Round 1's tree.
+
+##### Phase 1: Round 1 Closes
+
+When the closing block is mined, Steve broadcasts `round_closed`. All outstanding `vtxo_spend_request` messages are aborted via `vtxo_spend_aborted`. No further off-chain transitions are allowed in Round 1's VTXO-tree.
+
+At this point, Round 1's VTXO-tree is frozen but remains on-chain valid -- users can unilaterally exit at any time by broadcasting their VTXO path from leaf to root.
+
+##### Phase 2: Round 2 Initiated -- Invite
+
+Steve broadcasts `new_round_initiate` to all users and requests funding from Victoria (XLP) via `new_round_funding_request`. Users declare their intentions:
+
+| User | Action | Details |
+|------|--------|---------|
+| Alice | Transfer | Moves all capital to Round 2 |
+| Bob | Offboard | Withdraws 0.5 BTC to an on-chain address |
+| Carol | Transfer | Moves all capital to Round 2 |
+| Dave | Offline | Does not respond |
+| Eve | Transfer + Onboard | Moves existing capital and adds 0.4 BTC |
+
+Dave's silence is handled gracefully -- his capital remains in Round 1's VTXO-tree and will be recovered via the recycle path.
+
+##### Phase 3: Round 2 Initiated -- Confirm
+
+Steve constructs the new round's vtxo-root transaction containing:
+
+1. **New VTXO root output** -- locked with `A+B+C+E+S | S+T`, anchoring the new VTXO-tree for Round 2.
+2. **Offboarding output** -- Bob's 0.5 BTC sent to his on-chain address.
+3. **Forfeit root output** -- commits to the forfeit tree binding Round 1 VTXOs to Round 2.
+4. **Funding inputs** -- Eve's 0.4 BTC onboarding input and Steve/Victoria's liquidity inputs.
+
+Steve also constructs:
+- **Forfeit control transaction**: defines when forfeiture becomes valid.
+- **Forfeit leaf transactions**: each maps a specific Round 1 VTXO series to its successor commitment in Round 2.
+- **Recycle transaction**: contains an output for Dave's capital (based on his recycle address) and an output returning the remaining capital to Steve.
+
+Alice, Bob, Carol, and Eve verify the proposal and return their signatures via `new_round_vtxo_tree_accept`.
+
+##### Phase 4: Round 2 Initiated -- Fund
+
+Steve sends `new_round_prepare_start`. Each active user responds with `new_round_start_prepared`, signing:
+- The **forfeit transactions** (binding their old Round 1 VTXOs to Round 2).
+- The **cooperative recycle transaction** (enabling Dave's fund recovery).
+- Any **onboarding transactions** (Eve's new input).
+
+Once all signatures are collected, Steve signs and broadcasts the new vtxo-root on-chain.
+
+##### Phase 5: Round 2 Started -- Two Trees Coexist
+
+Steve broadcasts `new_round_start`. Round 2's VTXO-tree is now active. Alice, Bob, Carol, and Eve can transact off-chain via HTLCs.
+
+At this moment, **two VTXO-trees coexist on-chain**:
+- **Round 1's tree**: frozen, awaiting recycling for Dave's capital.
+- **Round 2's tree**: active, anchored by the new vtxo-root.
+
+The forfeit transactions ensure that if any user tries to spend from both trees, the forfeit mechanism activates -- they lose control of the old VTXO without the ASP gaining unilateral spend authority. This is the core mechanism that prevents double-spending across rounds.
+
+##### Phase 6: Round 1 Recycled
+
+When Dave comes online, he signs the cooperative recycle transaction via `recycle_accept`. Steve broadcasts it via `recycle_broadcast`, and Dave recovers his capital. Round 1 is now fully recycled.
+
+If Dave remains offline until the recycle block height is reached, Steve MAY broadcast the unilateral recycle transaction, which preserves Dave's allocated output for him to claim later.
+
+#### Key Properties of the Refresh
+
+| Property | Mechanism |
+|----------|-----------|
+| **Atomicity** | Forfeit transactions ensure old VTXOs are bound to the new vtxo-root in a single atomic step |
+| **No double-spend** | Signing forfeit txs means spending from the old tree triggers forfeiture |
+| **Offline safety** | Recycle transactions preserve capital for users who miss the transition |
+| **Unilateral exit** | Users can always broadcast their VTXO path on-chain, regardless of round state |
+| **Open participation** | New users can onboard and existing users can offboard during any refresh |
